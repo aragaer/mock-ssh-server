@@ -6,25 +6,12 @@ import tempfile
 from pytest import raises
 
 
-def test_ssh_session(server):
+def test_echo(server):
     for uid in server.users:
         with server.client(uid) as c:
-            _, stdout, _ = c.exec_command("ls /")
-            assert "etc" in (codecs.decode(bit, "utf8")
-                             for bit in stdout.read().split())
-
-            _, stdout, _ = c.exec_command("hostname")
-            assert (codecs.decode(stdout.read().strip(), "utf8") ==
-                    platform.node())
-
-
-def test_ssh_failed_commands(server):
-    for uid in server.users:
-        with server.client(uid) as c:
-            _, _, stderr = c.exec_command("rm /")
-            stderr = codecs.decode(stderr.read(), "utf8")
-            assert (stderr.startswith("rm: cannot remove") or
-                    stderr.startswith("rm: /: is a directory"))
+            shell = c.invoke_shell()
+            shell.sendall(b"hello, world")
+            assert shell.recv(4096) == b"hello, world"
 
 
 def test_multiple_connections1(server):

@@ -6,11 +6,6 @@ import socket
 import subprocess
 import threading
 
-try:
-    from queue import Queue
-except ImportError:  # Python 2.7
-    from Queue import Queue
-
 import paramiko
 
 from mockssh import sftp
@@ -40,24 +35,15 @@ class Handler(paramiko.ServerInterface):
             channel = self.transport.accept()
             if channel is None:
                 break
-            if channel.chanid not in self.command_queues:
-                self.command_queues[channel.chanid] = Queue()
             t = threading.Thread(target=self.handle_client, args=(channel,))
             t.setDaemon(True)
             t.start()
 
     def handle_client(self, channel):
         try:
-            command = self.command_queues[channel.chanid].get(block=True)
-            self.log.debug("Executing %s", command)
-            p = subprocess.Popen(command, shell=True,
-                                 stdin=subprocess.PIPE,
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE)
-            stdout, stderr = p.communicate()
-            channel.sendall(stdout)
-            channel.sendall_stderr(stderr)
-            channel.send_exit_status(p.returncode)
+            line = channel.recv(4096)
+            self.log.debug("Got %s", line)
+            channel.sendall(line)
         except Exception:
             self.log.error("Error handling client (channel: %s)", channel,
                            exc_info=True)
@@ -79,10 +65,6 @@ class Handler(paramiko.ServerInterface):
         self.log.debug("Rejecting public ley for user '%s'", username)
         return paramiko.AUTH_FAILED
 
-    def check_channel_exec_request(self, channel, command):
-        self.command_queues.setdefault(channel.get_id(), Queue()).put(command)
-        return True
-
     def check_channel_request(self, kind, chanid):
         if kind == "session":
             return paramiko.OPEN_SUCCEEDED
@@ -90,6 +72,13 @@ class Handler(paramiko.ServerInterface):
 
     def get_allowed_auths(self, username):
         return "publickey"
+
+    def check_channel_pty_request(self, channel, term, width, height,
+                                  pixelwidth, pixelheight, modes):
+        return True
+
+    def check_channel_shell_request(self, channel):
+        return True
 
 
 class Server(object):
